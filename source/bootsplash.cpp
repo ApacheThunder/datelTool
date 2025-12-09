@@ -32,7 +32,7 @@ void BootSplashInit() {
 	font.numColors =  fontPalLen / 2;
 	font.bpp = 4;
 	font.asciiOffset = 32;
-	font.convertSingleColor = true;
+	// font.convertSingleColor = true;
 	consoleSetFont(console, &font);
 	
 	consoleSetWindow(console, 0, 6, 32, 20);

@@ -67,7 +67,7 @@ static inline uint8_t getSectorEraseComman() {
 	return 0;
 }
 
-static inline uint16_t getFlashSectorsCount() {
+uint16_t getFlashSectorsCount() {
 	switch(productType) {
 		case GAME_N_MUSIC:
 			return 128;

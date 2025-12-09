@@ -1,66 +1,25 @@
-#---------------------------------------------------------------------------------
-.SUFFIXES:
-#---------------------------------------------------------------------------------
-.SECONDARY:
+# SPDX-License-Identifier: CC0-1.0
+#
+# SPDX-FileContributor: Antonio Niño Díaz, 2025
 
-ifeq ($(strip $(DEVKITARM)),)
-$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM)
-endif
+BLOCKSDS	?= /opt/blocksds/core
 
-include $(DEVKITARM)/ds_rules
+# User config
 
-export TARGET		:=	datelTool
-export TOPDIR		:=	$(CURDIR)
+NAME		:= datelTool
+GAME_TITLE	:= Datel Flash Tool
+GAME_SUBTITLE	:= Flash Dumper & Writer
+GAME_AUTHOR := by Apache Thunder & edo9300
+GAME_ICON := icon.png
+GFXDIRS := graphics
 
-export VERSION_MAJOR	:= 1
-export VERSION_MINOR	:= 0
-export VERSTRING	:=	$(VERSION_MAJOR).$(VERSION_MINOR)
+# Libraries
 
-.PHONY: clean arm7/$(TARGET).elf arm9/$(TARGET).elf
+include $(BLOCKSDS)/sys/default_makefiles/rom_arm9/Makefile
 
-#---------------------------------------------------------------------------------
-# main targets
-#---------------------------------------------------------------------------------
-all: $(TARGET).nds
-
-dist:	all
-	@mkdir -p debug
-	@cp $(TARGET).nds
-	@cp $(TARGET).arm7.elf debug/$(TARGET).arm7.elf
-	@cp $(TARGET).arm9.elf debug/$(TARGET).arm9.elf
-
-$(TARGET).nds:	$(TARGET).arm7 $(TARGET).arm9
-	ndstool	-c $(TARGET).nds -7 $(TARGET).arm7.elf -9 $(TARGET).arm9.elf \
-			-g DATT 01 "DATEL TOOL" -z 80040000 -u 00030004 -a 00000138 -p 0001 \
-			-t banner.bin
-	cp $(TARGET).nds 00000000.app
-	maketmd 00000000.app
-
-$(TARGET).arm7	: arm7/$(TARGET).elf
-	cp arm7/$(TARGET).elf $(TARGET).arm7.elf
-$(TARGET).arm9	: arm9/$(TARGET).elf
-	cp arm9/$(TARGET).elf $(TARGET).arm9.elf
-
-#---------------------------------------------------------------------------------
-arm7/$(TARGET).elf:
-	$(MAKE) -C arm7
-	
-#---------------------------------------------------------------------------------
-arm9/$(TARGET).elf:
-	$(MAKE) -C arm9
-
-#---------------------------------------------------------------------------------
-clean:
-	@echo clean ...
-	@rm -fr debug
-	@rm -fr data
-	@rm -fr $(BUILD) $(TARGET).elf $(TARGET).nds $(TARGET).nds.orig.nds 00000000.app
-	@rm -fr $(TARGET).arm7
-	@rm -fr $(TARGET).arm9
-	@rm -fr $(TARGET).arm7.elf
-	@rm -fr $(TARGET).arm9.elf
-	@$(MAKE) -C arm9 clean
-	@$(MAKE) -C arm7 clean
-
-data:
-	@mkdir -p data
+$(ROM): $(ELF)
+	@echo "  NDSTOOL $@"
+	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
+		-7 $(ARM7ELF) -9 $(ELF) \
+		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
+		-g DATT 01 "DATEL TOOL" -z 80040000 -a 00000138 -p 0001 $(NDSTOOL_ARGS)
