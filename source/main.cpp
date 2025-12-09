@@ -3,10 +3,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
+#include <sys/stat.h>
 
 #include "bootsplash.h"
-#include "tonccpy.h"
-#include "read_card.h"
+#include "card.h"
 #include "datel_flash_routines.h"
 
 #define CONSOLE_SCREEN_WIDTH 32
@@ -15,8 +15,6 @@
 #define SECTOR_SIZE (u32)0x1000
 
 ALIGN(4) u8 CopyBuffer[SECTOR_SIZE * 0x200];
-
-DTCM_DATA ALIGN(4) sNDSHeaderExt* cartHeader;
 
 DTCM_DATA u32 NUM_SECTORS = 0x200;
 
@@ -57,30 +55,20 @@ void DoFATerror(bool isFatel) {
 	}
 }
 
-void CardInit() {
+u16 CardInit() {
 	consoleClear();
-	// Do cart init stuff to wake cart up.
-	cardInit(cartHeader);
-	DoWait(60);
 	u16 chipID = init();
-	iprintf("\nCart Chip Id: %4x \n", chipID);	
-	switch(productType) {
-		case GAME_N_MUSIC:
-			NUM_SECTORS = 0x80;
-			printf("Cart Type: Game n' Music\n\n");
-			break;
-		case ACTION_REPLAY_DS:
-			NUM_SECTORS = 0x200;
-			printf("Cart Type: Action Replay\n\n");
-			break;
-	}
+	printf("\nCart Chip Id: %4x \n", chipID);
+	printf("Cart Type: %s\n\n", productName());
+	NUM_SECTORS = getFlashSectorsCount();
+	return chipID;
 }
 
 
 void DoFlashDump() {
 	consoleClear();
 	DoWait(60);	
-	iprintf("About to dump %d sectors.\n\n", (int)NUM_SECTORS);
+	printf("About to dump %d sectors.\n\n", (int)NUM_SECTORS);
 	printf("Press [A] to continue\n");
 	printf("Press [B] to abort\n");
 	while(1) {
@@ -133,7 +121,7 @@ void DoFlashDump() {
 void DoFlashWrite() {
 	consoleClear();
 	DoWait(60);	
-	iprintf("About to write %d sectors.\n\n", (int)NUM_SECTORS);
+	printf("About to write %d sectors.\n\n", (int)NUM_SECTORS);
 	printf("Press [A] to continue\n");
 	printf("Press [B] to abort\n");
 	while(1) {
@@ -207,15 +195,15 @@ void vblankHandler (void) {
 		consoleClear();
 		printf(textBuffer);
 		printf(textProgressBuffer);
-		iprintf("%d \n", ProgressTracker);
+		printf("%d \n", ProgressTracker);
 		UpdateProgressText = false;
 	}
 }
 
 int MainMenu() {
 	int Value = -1;
-	toncset (CopyBuffer, 0xFF, 512);
-	toncset (ReadBuffer, 0xFF, SECTOR_SIZE);
+	memset(CopyBuffer, 0xFF, 512);
+	memset(ReadBuffer, 0xFF, SECTOR_SIZE);
 	// consoleClear();
 	printf("Press [A] to dump flash\n\n");
 	printf("Press [B] to write flash\n\n");
@@ -236,7 +224,6 @@ int MainMenu() {
 int main() {
 	defaultExceptionHandler();
 	BootSplashInit();
-	sysSetCartOwner (BUS_OWNER_ARM9);
 	sysSetCardOwner (BUS_OWNER_ARM9);
 	
 	fatMounted = fatInitDefault();
@@ -247,31 +234,19 @@ int main() {
 		return 0;
 	}
 	
-	if(access("/datelTool", F_OK) != 0)mkdir("/datelTool", 0777); 
+	if(access("/datelTool", F_OK) != 0) mkdir("/datelTool", 0777); 
 		
 	// Enable vblank handler
 	irqSet(IRQ_VBLANK, vblankHandler);
-	
-	
-	if (!isDSiMode() && (REG_SCFG_EXT == 0)) {
-		while(1) {
-			swiWaitForVBlank();
-			scanKeys();
-			if(keysDown() == 0)break;;
+
+	while(true) {
+		WaitForNewCard();
+		consoleClear();
+		if(CardInit() != 0xFFFF){
+			break;
 		}
-		printf("Insert target cart now.\n");
-		printf("Press [A] to continue.\n");
-		printf("Press [B] to aboart.\n");
-		while(1) {
-			swiWaitForVBlank();
-			scanKeys();
-			if(keysDown() & KEY_A)break;
-			if(keysDown() & KEY_B)return 0;
-		}
-	} 
-	
-	consoleClear();
-	CardInit();
+		printf("Not a supported cart, insert it again");
+	}
 	while(1) {
 		switch (MainMenu()) {
 			case 0: { DoFlashDump(); } break;

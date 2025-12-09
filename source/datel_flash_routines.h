@@ -12,6 +12,8 @@ uint16_t init();
 void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff);
 void readSector(uint32_t sectorAddr, uint8_t* outBuff);
 void eraseChip();
+const char* productName();
+uint16_t getFlashSectorsCount();
 
 
 #endif // DATEL_FLASH_ROUTINES
