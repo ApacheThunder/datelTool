@@ -46,7 +46,7 @@ void WaitCard() {
     if(isDSiMode()) {
         if((REG_SCFG_MC & BIT(0)) == 1) {
 			consoleClear();
-            printf("No cartridge detected!\nPlease insert a cartridge to continue!\n");
+            printf("No cartridge detected!\n\nPlease insert a cartridge to\ncontinue!\n");
             while((REG_SCFG_MC & BIT(0)) == 1)
                 swiWaitForVBlank();
         }
@@ -62,9 +62,10 @@ void WaitForNewCard(){
         if(UpdateCardInfo())
             break;
 		consoleClear();
-        printf("Cartridge not read properly!\nPlease reinsert it\n");
+        printf("Cartridge not read properly!\n\nPlease reinsert it\n");
         do {
             swiWaitForVBlank();
         } while(isDSiMode() && !CardIsPresent());
     } while(true);
 }
+

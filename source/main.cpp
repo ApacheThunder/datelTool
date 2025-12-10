@@ -14,6 +14,12 @@
 
 #define SECTOR_SIZE (u32)0x1000
 
+extern void consoleClearTop(bool KeepTopSelected);
+extern void PrintToTop(const char* Message, int data, bool clearScreen);
+extern void PrintToTop(const char* Message, const char* SecondMessage, bool clearScreen);
+
+extern uint8_t productType;
+
 ALIGN(4) u8 CopyBuffer[SECTOR_SIZE * 0x200];
 
 DTCM_DATA u32 NUM_SECTORS = 0x200;
@@ -22,6 +28,8 @@ DTCM_DATA ALIGN(4) u8 ReadBuffer[SECTOR_SIZE];
 
 DTCM_DATA bool ErrorState = false;
 DTCM_DATA bool fatMounted = false;
+DTCM_DATA bool cardEjected = false;
+DTCM_DATA bool isDSi = false;
 
 DTCM_DATA char gameTitle[13] = {0};
 
@@ -31,7 +39,23 @@ DTCM_DATA bool UpdateProgressText;
 DTCM_DATA const char* textBuffer = "X------------------------------X\nX------------------------------X";
 DTCM_DATA const char* textProgressBuffer = "X------------------------------X\nX------------------------------X";
 
-extern uint8_t productType;
+DTCM_DATA const char* ValidPaths[] = {
+	"/datelTool/datel_rom.bin",
+	"/datelTool/ards-backup.bin",
+	"/datelTool/gnm-backup.bin"
+};
+
+
+const char* DumpFilePath() {
+	switch (productType) {
+		case ACTION_REPLAY_DS: 
+			return ValidPaths[1];
+		case GAMES_N_MUSIC:
+			return ValidPaths[2];
+		default:
+			return ValidPaths[0];
+	}
+}
 
 
 void DoWait(int waitTime = 30) {
@@ -58,8 +82,8 @@ void DoFATerror(bool isFatel) {
 u16 CardInit() {
 	consoleClear();
 	u16 chipID = init();
-	printf("\nCart Chip Id: %4x \n", chipID);
-	printf("Cart Type: %s\n\n", productName());
+	PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
+	PrintToTop("Cart Type: %s\n", productName(), false);
 	NUM_SECTORS = getFlashSectorsCount();
 	return chipID;
 }
@@ -72,16 +96,20 @@ void DoFlashDump() {
 	printf("Press [A] to continue\n");
 	printf("Press [B] to abort\n");
 	while(1) {
+		if (isDSi && cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A)break;
 		if(keysDown() & KEY_B)return;
 	}
+	
+	consoleClear();
+	
 	if (!fatMounted) { DoFATerror(true); return; }
-	FILE *dest = fopen("/datelTool/datel_rom.bin", "wb");
+	FILE *dest = fopen(DumpFilePath(), "wb");
 	
 	if (dest == NULL) {
-		printf("Error accessing datel_rom.bin!\n");
+		printf("Error accessing dump file!\n");
 		printf("Press [B] to abort.\n");
 		while(1) {
 			swiWaitForVBlank();
@@ -90,10 +118,15 @@ void DoFlashDump() {
 		}
 	}
 	
-	textBuffer = "Dumping sectors to datel_rom.bin\nPlease Wait...\n\n\n";
+	textBuffer = "Dumping sectors to file.\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
 	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
+		if (isDSi && cardEjected) { 
+			fflush(dest);
+			fclose(dest);
+			return;
+		}
 		readSector(i, ReadBuffer);
 		fwrite(ReadBuffer, SECTOR_SIZE, 1, dest);
 		if (ProgressTracker >= 0)ProgressTracker--;
@@ -103,11 +136,13 @@ void DoFlashDump() {
 	fclose(dest);
 	swiWaitForVBlank();
 	while (UpdateProgressText)swiWaitForVBlank();
+	if (isDSi && cardEjected)return;
 	consoleClear();
 	printf("Flash dump finished!\n\n");
 	printf("Press [A] to return to main menu\n");
 	printf("Press [B] to exit\n");
 	while(1) {
+		if (isDSi && cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A) return;
@@ -125,19 +160,23 @@ void DoFlashWrite() {
 	printf("Press [A] to continue\n");
 	printf("Press [B] to abort\n");
 	while(1) {
+		if (isDSi && cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A)break;
 		if(keysDown() & KEY_B)return;
 	}
+	consoleClear();
+	
 	if (!fatMounted) { DoFATerror(true); return; }
 	 
-	FILE *src = fopen("/datelTool/datel_rom.bin", "rb");
+	FILE *src = fopen(DumpFilePath(), "rb");
 	
 	if (src == NULL) {
-		printf("Error accessing datel_rom.bin!\n");
+		printf("Error accessing dump file!\n");
 		printf("Press [B] to abort.\n");
 		while(1) {
+			if (isDSi && cardEjected)return;
 			swiWaitForVBlank();
 			scanKeys();
 			if(keysDown() & KEY_B)return;
@@ -148,27 +187,30 @@ void DoFlashWrite() {
     auto fileLength = ftell(src);
     fseek(src, 0, SEEK_SET);
 	
-	if ((u64)fileLength > (0x200 * SECTOR_SIZE)) {
-		printf("datel_rom.bin file too large!\n");
+	// if ((u64)fileLength > (0x200 * SECTOR_SIZE)) {
+	if ((u64)fileLength != ((u64)NUM_SECTORS * SECTOR_SIZE)) {
+		consoleClear();
+		printf("Flash dump filesize mismatch!\n");
 		printf("Press [B] to abort.\n");
 		while(1) {
+			if (isDSi && cardEjected)return;
 			swiWaitForVBlank();
 			scanKeys();
 			if(keysDown() & KEY_B)return;
 		}
 	}
 	
-	printf("Reading datel_rom.bin ...\n\n");	
+	printf("Reading flash binary file ...\n\n");	
 	fread(CopyBuffer, 1, fileLength, src);
 	fclose(src);
-	consoleClear();
 	
-	textBuffer = "Writing sectors to Datel Cart.\nPlease Wait...\n\n\n";
+	textBuffer = "Writing file to Datel Cart.\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
 	eraseChip();
 	swiWaitForVBlank();
 	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
+		if (isDSi && cardEjected)return;
 		writeSector(i, CopyBuffer + i);
 		if (ProgressTracker >= 0)ProgressTracker--;
 		UpdateProgressText = true;
@@ -179,6 +221,7 @@ void DoFlashWrite() {
 	printf("Press [A] to return to main menu\n");
 	printf("Press [B] to exit\n");
 	while(1) {
+		if (isDSi && cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A) return;
@@ -198,24 +241,47 @@ void vblankHandler (void) {
 		printf("%d \n", ProgressTracker);
 		UpdateProgressText = false;
 	}
+	
+	if (isDSi && !cardEjected && REG_SCFG_MC == 0x11)cardEjected = true;
+}
+
+void DoCardWait() {
+	consoleClearTop(false);
+	while(true) {
+		WaitForNewCard();
+		consoleClear();
+		if(CardInit() != 0xFFFF) return;
+		printf("Not a supported cart!\nInsert it again...");
+	}
+}
+
+
+void PrintMainMenuText() {
+	printf("Press [A] to dump flash\n\n");
+	printf("Press [X] or [Y] to write flash\n\n");
+	printf("\nPress [B] to exit\n");
 }
 
 int MainMenu() {
 	int Value = -1;
 	memset(CopyBuffer, 0xFF, 512);
 	memset(ReadBuffer, 0xFF, SECTOR_SIZE);
-	// consoleClear();
-	printf("Press [A] to dump flash\n\n");
-	printf("Press [B] to write flash\n\n");
-	printf("\nPress [X] or [Y] to exit\n");
+	consoleClear();
+	PrintMainMenuText();
 	while(Value == -1) {
+		if (isDSi && cardEjected) {
+			consoleClear();
+			DoCardWait();
+			PrintMainMenuText();
+			cardEjected = false;
+		}
 		swiWaitForVBlank();
 		scanKeys();
 		switch (keysDown()){
 			case KEY_A: 	{ Value = 0; } break;
-			case KEY_B: 	{ Value = 1; } break;
-			case KEY_X: 	{ Value = 2; } break;
-			case KEY_Y: 	{ Value = 2; } break;
+			case KEY_X: 	{ Value = 1; } break;
+			case KEY_Y: 	{ Value = 1; } break;
+			case KEY_B: 	{ Value = 2; } break;
 		}
 	}
 	return Value;
@@ -225,6 +291,8 @@ int main() {
 	defaultExceptionHandler();
 	BootSplashInit();
 	sysSetCardOwner (BUS_OWNER_ARM9);
+	
+	isDSi = isDSiMode();
 	
 	fatMounted = fatInitDefault();
 	
@@ -239,14 +307,8 @@ int main() {
 	// Enable vblank handler
 	irqSet(IRQ_VBLANK, vblankHandler);
 
-	while(true) {
-		WaitForNewCard();
-		consoleClear();
-		if(CardInit() != 0xFFFF){
-			break;
-		}
-		printf("Not a supported cart, insert it again");
-	}
+	DoCardWait();
+	
 	while(1) {
 		switch (MainMenu()) {
 			case 0: { DoFlashDump(); } break;
@@ -261,7 +323,4 @@ int main() {
     }
 	return 0;
 }
-
-
-
 

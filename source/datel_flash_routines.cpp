@@ -9,16 +9,16 @@
 
 // The following were taken from libnds
 #define	C_REG_CARD_DATA_RD	(*(vu32*)0x04100010)
-#define C_REG_AUXSPICNT	(*(vu16*)0x040001A0)
+#define C_REG_AUXSPICNT		(*(vu16*)0x040001A0)
 #define C_REG_AUXSPICNTH	(*(vu8*)0x040001A1)
 #define C_REG_AUXSPIDATA	(*(vu8*)0x040001A2)
 #define C_REG_ROMCTRL		(*(vu32*)0x040001A4)
 #define C_REG_CARD_COMMAND	((vu8*)0x040001A8)
 #define C_CARD_CR1_ENABLE	0x80	// in byte 1, i.e. 0x8000
-#define C_CARD_CR1_IRQ		 0x40	// in byte 1, i.e. 0x4000
-#define C_CARD_BUSY				 (1<<31)					 // when reading, still expecting incomming data?
+#define C_CARD_CR1_IRQ		0x40	// in byte 1, i.e. 0x4000
+#define C_CARD_BUSY			(1<<31)	// when reading, still expecting incomming data?
 #define C_CARD_SPI_BUSY		(1<<7)
-#define C_CARD_CR1_EN	0x8000
+#define C_CARD_CR1_EN		0x8000
 #define	C_CARD_CR1_SPI_EN	0x2000
 #define	C_CARD_CR1_SPI_HOLD	0x40
 //---------------------------------------------------------------------------------
@@ -35,17 +35,17 @@ uint8_t productType = ACTION_REPLAY_DS;
 
 const char* productName() {
 	switch(productType) {
-		case GAME_N_MUSIC:
-			return "game n music";
+		case GAMES_N_MUSIC:
+			return "GAMES n' MUSIC";
 		case ACTION_REPLAY_DS:
-			return "action replay";
+			return "ACTION REPLAY";
 	}
-	return "unknown";
+	return "UNKNOWN";
 }
 
 static inline uint16_t getMainAddr() {
 	switch(productType) {
-		case GAME_N_MUSIC:
+		case GAMES_N_MUSIC:
 			return 0x5555;
 		case ACTION_REPLAY_DS:
 			return 0x0AAA;
@@ -59,7 +59,7 @@ static inline uint16_t getSecondAddr() {
 
 static inline uint8_t getSectorEraseComman() {
 	switch(productType) {
-		case GAME_N_MUSIC:
+		case GAMES_N_MUSIC:
 			return 0x30;
 		case ACTION_REPLAY_DS:
 			return 0x50;
@@ -69,7 +69,7 @@ static inline uint8_t getSectorEraseComman() {
 
 uint16_t getFlashSectorsCount() {
 	switch(productType) {
-		case GAME_N_MUSIC:
+		case GAMES_N_MUSIC:
 			return 128;
 		case ACTION_REPLAY_DS:
 			return 512;
@@ -273,7 +273,7 @@ u32 openSpi (uint8_t commandByte) {
 }
 
 uint16_t init() {
-	productType = GAME_N_MUSIC;
+	productType = GAMES_N_MUSIC;
 	openSpi(0);
 	if(auto chip_id = readChipID(); std::find(gnm_flash_ids.begin(), gnm_flash_ids.end(), chip_id) != gnm_flash_ids.end()) {
 		return chip_id;
