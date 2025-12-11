@@ -20,11 +20,9 @@ extern void PrintToTop(const char* Message, const char* SecondMessage, bool clea
 
 extern uint8_t productType;
 
-ALIGN(4) u8 CopyBuffer[SECTOR_SIZE * 0x200];
-
 DTCM_DATA u32 NUM_SECTORS = 0x200;
 
-DTCM_DATA ALIGN(4) u8 ReadBuffer[SECTOR_SIZE];
+DTCM_DATA ALIGN(16) u8 ReadBuffer[SECTOR_SIZE];
 
 DTCM_DATA bool ErrorState = false;
 DTCM_DATA bool fatMounted = false;
@@ -74,7 +72,6 @@ void DoFATerror(bool isFatel) {
 	while(1) {
 		swiWaitForVBlank();
 		scanKeys();
-		// if(keysDown() & KEY_A) return;
 		if(keysDown() != 0) return;
 	}
 }
@@ -109,7 +106,7 @@ void DoFlashDump() {
 	FILE *dest = fopen(DumpFilePath(), "wb");
 	
 	if (dest == NULL) {
-		printf("Error accessing dump file!\n");
+		printf("Error accessing dump file!\n\n");
 		printf("Press [B] to abort.\n");
 		while(1) {
 			swiWaitForVBlank();
@@ -118,7 +115,7 @@ void DoFlashDump() {
 		}
 	}
 	
-	textBuffer = "Dumping sectors to file.\n\nPlease Wait...\n\n\n";
+	textBuffer = "Dumping sectors to file.\n\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
 	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
@@ -200,18 +197,18 @@ void DoFlashWrite() {
 		}
 	}
 	
-	printf("Reading flash binary file ...\n\n");	
-	fread(CopyBuffer, 1, fileLength, src);
-	fclose(src);
-	
-	textBuffer = "Writing file to Datel Cart.\n\nPlease Wait...\n\n\n";
+	textBuffer = "Writing file to Datel Cart.\n\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
 	eraseChip();
-	swiWaitForVBlank();
 	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
-		if (isDSi && cardEjected)return;
-		writeSector(i, CopyBuffer + i);
+		if (isDSi && cardEjected) {
+			fclose(src);
+			return;
+		}
+		fseek(src, i, SEEK_SET);
+		fread(ReadBuffer, 1, SECTOR_SIZE, src);
+		writeSector(i, ReadBuffer);
 		if (ProgressTracker >= 0)ProgressTracker--;
 		UpdateProgressText = true;
 	}
@@ -251,7 +248,7 @@ void DoCardWait() {
 		WaitForNewCard();
 		consoleClear();
 		if(CardInit() != 0xFFFF) return;
-		printf("Not a supported cart!\nInsert it again...");
+		printf("Not a supported cart!\n\nInsert it again...");
 	}
 }
 
@@ -264,7 +261,6 @@ void PrintMainMenuText() {
 
 int MainMenu() {
 	int Value = -1;
-	memset(CopyBuffer, 0xFF, 512);
 	memset(ReadBuffer, 0xFF, SECTOR_SIZE);
 	consoleClear();
 	PrintMainMenuText();

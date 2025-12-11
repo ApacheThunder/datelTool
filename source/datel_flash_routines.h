@@ -12,6 +12,7 @@ uint16_t init();
 void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff);
 void readSector(uint32_t sectorAddr, uint8_t* outBuff);
 void eraseChip();
+void eraseSector(uint32_t sectorAddr);
 const char* productName();
 uint16_t getFlashSectorsCount();
 
