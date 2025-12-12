@@ -27,6 +27,7 @@ DTCM_DATA ALIGN(16) u8 ReadBuffer[SECTOR_SIZE];
 DTCM_DATA bool ErrorState = false;
 DTCM_DATA bool fatMounted = false;
 DTCM_DATA bool cardEjected = false;
+DTCM_DATA bool activeIO = false;
 DTCM_DATA bool isDSi = false;
 
 DTCM_DATA char gameTitle[13] = {0};
@@ -93,7 +94,7 @@ void DoFlashDump() {
 	printf("Press [A] to continue\n");
 	printf("Press [B] to abort\n");
 	while(1) {
-		if (isDSi && cardEjected)return;
+		if (cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A)break;
@@ -118,8 +119,10 @@ void DoFlashDump() {
 	textBuffer = "Dumping sectors to file.\n\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
+	activeIO = true;
 	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
-		if (isDSi && cardEjected) { 
+		if (isDSi && cardEjected) {
+			activeIO = false;
 			fflush(dest);
 			fclose(dest);
 			return;
@@ -129,17 +132,18 @@ void DoFlashDump() {
 		if (ProgressTracker >= 0)ProgressTracker--;
 		UpdateProgressText = true;
 	}
+	activeIO = false;
 	fflush(dest);
 	fclose(dest);
 	swiWaitForVBlank();
 	while (UpdateProgressText)swiWaitForVBlank();
-	if (isDSi && cardEjected)return;
+	if (cardEjected)return;
 	consoleClear();
 	printf("Flash dump finished!\n\n");
 	printf("Press [A] to return to main menu\n");
 	printf("Press [B] to exit\n");
 	while(1) {
-		if (isDSi && cardEjected)return;
+		if (cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A) return;
@@ -173,7 +177,7 @@ void DoFlashWrite() {
 		printf("Error accessing dump file!\n");
 		printf("Press [B] to abort.\n");
 		while(1) {
-			if (isDSi && cardEjected)return;
+			if (cardEjected)return;
 			swiWaitForVBlank();
 			scanKeys();
 			if(keysDown() & KEY_B)return;
@@ -200,25 +204,29 @@ void DoFlashWrite() {
 	textBuffer = "Writing file to Datel Cart.\n\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
+	activeIO = true;
 	eraseChip();
 	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
 		if (isDSi && cardEjected) {
+			activeIO = false;
 			fclose(src);
 			return;
 		}
 		fseek(src, i, SEEK_SET);
 		fread(ReadBuffer, 1, SECTOR_SIZE, src);
+		// eraseSector(i);
 		writeSector(i, ReadBuffer);
 		if (ProgressTracker >= 0)ProgressTracker--;
 		UpdateProgressText = true;
 	}
+	activeIO = false;
 	while (UpdateProgressText)swiWaitForVBlank();
 	consoleClear();
 	printf("Flash write finished!\n\n");
 	printf("Press [A] to return to main menu\n");
 	printf("Press [B] to exit\n");
 	while(1) {
-		if (isDSi && cardEjected)return;
+		if (cardEjected)return;
 		swiWaitForVBlank();
 		scanKeys();
 		if(keysDown() & KEY_A) return;
@@ -239,7 +247,11 @@ void vblankHandler (void) {
 		UpdateProgressText = false;
 	}
 	
-	if (isDSi && !cardEjected && REG_SCFG_MC == 0x11)cardEjected = true;
+	if (isDSi) {
+		if (!cardEjected && REG_SCFG_MC == 0x11)cardEjected = true;
+	}/* else { // Causes screen flicker if used here.
+		if (!activeIO && cardEjected)cardEjected = CardIsPresent();
+	}*/
 }
 
 void DoCardWait() {
@@ -265,7 +277,7 @@ int MainMenu() {
 	consoleClear();
 	PrintMainMenuText();
 	while(Value == -1) {
-		if (isDSi && cardEjected) {
+		if (cardEjected) {
 			consoleClear();
 			DoCardWait();
 			PrintMainMenuText();

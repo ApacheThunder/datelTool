@@ -72,8 +72,9 @@ uint16_t getFlashSectorsCount() {
 		case GAMES_N_MUSIC:
 			return 128;
 		case ACTION_REPLAY_DS:
-			return 128;
-			// return 512; // Flashing full chip disabled until corruption issue is found.
+			// return 128;
+			// return 512; // Flashing full chip disabled until corruption issue is found. // Dumps mirror at 256 sector count. Possible cause?
+			return 256;
 	}
 	return 128;
 }
