@@ -39,7 +39,7 @@ DTCM_DATA const char* textBuffer = "X------------------------------X\nX---------
 DTCM_DATA const char* textProgressBuffer = "X------------------------------X\nX------------------------------X";
 
 DTCM_DATA const char* ValidPaths[] = {
-	"/datelTool/datel_rom.bin",
+	"/datelTool/datel-backup.bin",
 	"/datelTool/ards-backup.bin",
 	"/datelTool/gnm-backup.bin"
 };
@@ -48,8 +48,6 @@ DTCM_DATA const char* ValidPaths[] = {
 const char* DumpFilePath() {
 	switch (productType) {
 		case ACTION_REPLAY_DS: 
-			return ValidPaths[1];
-		case ACTION_REPLAY_DS_2: 
 			return ValidPaths[1];
 		case GAMES_N_MUSIC:
 			return ValidPaths[2];

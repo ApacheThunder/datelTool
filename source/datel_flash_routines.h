@@ -5,8 +5,12 @@
 
 enum DATEL_TYPE {
 	ACTION_REPLAY_DS 	= 0x00,
-	GAMES_N_MUSIC 		= 0x01,
-	ACTION_REPLAY_DS_2 	= 0x02,
+	GAMES_N_MUSIC 		= 0x01
+};
+
+enum CHIP_TYPE {
+	TYPE1 = 0x00,
+	TYPE2 = 0x01
 };
 
 uint16_t init();

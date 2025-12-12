@@ -32,7 +32,9 @@
 #define SECTOR_ERASE_COMMAND getSectorEraseComman()
 
 uint8_t productType = ACTION_REPLAY_DS;
+uint8_t chipType = TYPE1;
 uint16_t currentChipID = 0xFFFF;
+
 
 const char* productName() {
 	switch(productType) {
@@ -40,22 +42,20 @@ const char* productName() {
 			return "GAMES n' MUSIC";
 		case ACTION_REPLAY_DS:
 			return "ACTION REPLAY";
-		case ACTION_REPLAY_DS_2:
-			return "ACTION REPLAY";
+		default: 
+			return "UNKNOWN";
 	}
-	return "UNKNOWN";
 }
 
 static inline uint16_t getMainAddr() {
-	switch(productType) {
-		case GAMES_N_MUSIC:
-			return 0x5555;
-		case ACTION_REPLAY_DS:
+	switch (chipType) {
+		case TYPE1: 
 			return 0x0AAA;
-		case ACTION_REPLAY_DS_2:
+		case TYPE2: 
 			return 0x5555;
+		default:
+			return 0;
 	}
-	return 0;
 }
 
 static inline uint16_t getSecondAddr() {
@@ -63,15 +63,14 @@ static inline uint16_t getSecondAddr() {
 }
 
 static inline uint8_t getSectorEraseComman() {
-	switch(productType) {
-		case GAMES_N_MUSIC:
-			return 0x30;
-		case ACTION_REPLAY_DS:
+	switch (chipType) {
+		case TYPE1: 
 			return 0x50;
-		case ACTION_REPLAY_DS_2:
+		case TYPE2: 
 			return 0x30;
+		default:
+			return 0;
 	}
-	return 0;
 }
 
 uint16_t getFlashSectorsCount() {
@@ -80,11 +79,19 @@ uint16_t getFlashSectorsCount() {
 			return 128;
 		case ACTION_REPLAY_DS:
 			return 256;
-		case ACTION_REPLAY_DS_2:
-			return 256;
+		default: 
+			return 128;
 	}
-	return 128;
 }
+
+static constexpr std::array ards_flash_ids {
+	uint16_t{0xC8BF},
+	uint16_t{0xC9BF},
+};
+
+static constexpr std::array ards_type2_flash_ids {
+	uint16_t{0xD8BF},
+};
 
 static constexpr std::array gnm_flash_ids {
 	uint16_t{0xD4BF},
@@ -93,14 +100,6 @@ static constexpr std::array gnm_flash_ids {
 	uint16_t{0xD7BF},
 };
 
-static constexpr std::array ards_flash_ids {
-	uint16_t{0xC8BF},
-	uint16_t{0xC9BF},
-};
-
-static constexpr std::array ards2_flash_ids {
-	uint16_t{0xD8BF},
-};
 
 inline void writeSpiByte(uint8_t byte) {
 	REG_AUXSPIDATA = byte;
@@ -286,22 +285,27 @@ u32 openSpi (uint8_t commandByte) {
 }
 
 uint16_t init() {
-	productType = GAMES_N_MUSIC;
-	openSpi(0);
-	if(auto chip_id = readChipID(); std::find(gnm_flash_ids.begin(), gnm_flash_ids.end(), chip_id) != gnm_flash_ids.end()) {
-		return chip_id;
-	}
-
 	productType = ACTION_REPLAY_DS;
+	chipType = TYPE1;
+	openSpi(0);
 	if(auto chip_id = readChipID(); std::find(ards_flash_ids.begin(), ards_flash_ids.end(), chip_id) != ards_flash_ids.end()) {
 		return chip_id;
 	}
 	
-	productType = ACTION_REPLAY_DS_2;
-	if(auto chip_id = readChipID(); std::find(ards2_flash_ids.begin(), ards2_flash_ids.end(), chip_id) != ards2_flash_ids.end()) {
+	chipType = TYPE2;
+	if(auto chip_id = readChipID(); std::find(ards_type2_flash_ids.begin(), ards_type2_flash_ids.end(), chip_id) != ards_type2_flash_ids.end()) {
 		return chip_id;
 	}
 	
+	// Also type2
+	productType = GAMES_N_MUSIC;
+	if(auto chip_id = readChipID(); std::find(gnm_flash_ids.begin(), gnm_flash_ids.end(), chip_id) != gnm_flash_ids.end()) {
+		return chip_id;
+	}
+	
+	// Reset to defaults and exit as invalid.
+	productType = ACTION_REPLAY_DS;
+	chipType = TYPE1;
 	return 0xFFFF;
 }
 
