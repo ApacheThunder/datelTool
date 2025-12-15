@@ -1,4 +1,5 @@
 #include <nds.h>
+#include <array>
 #include <fat.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +23,8 @@ extern uint8_t productType;
 
 DTCM_DATA u32 NUM_SECTORS = 0x200;
 
-DTCM_DATA ALIGN(16) u8 ReadBuffer[SECTOR_SIZE];
+DTCM_DATA ALIGN(16) std::array<u8, SECTOR_SIZE> ReadBuffer;
+DTCM_DATA ALIGN(16) std::array<u8, SECTOR_SIZE> WriteBuffer;
 
 DTCM_DATA bool ErrorState = false;
 DTCM_DATA bool fatMounted = false;
@@ -127,8 +129,8 @@ void DoFlashDump() {
 			fclose(dest);
 			return;
 		}
-		readSector(i, ReadBuffer);
-		fwrite(ReadBuffer, SECTOR_SIZE, 1, dest);
+		readSector(i, ReadBuffer.data());
+		fwrite(ReadBuffer.data(), SECTOR_SIZE, 1, dest);
 		if (ProgressTracker >= 0)ProgressTracker--;
 		UpdateProgressText = true;
 	}
@@ -156,18 +158,6 @@ void DoFlashDump() {
 
 void DoFlashWrite() {
 	consoleClear();
-	DoWait(60);	
-	printf("About to write %d sectors.\n\n", (int)NUM_SECTORS);
-	printf("Press [A] to continue\n");
-	printf("Press [B] to abort\n");
-	while(1) {
-		if (isDSi && cardEjected)return;
-		swiWaitForVBlank();
-		scanKeys();
-		if(keysDown() & KEY_A)break;
-		if(keysDown() & KEY_B)return;
-	}
-	consoleClear();
 	
 	if (!fatMounted) { DoFATerror(true); return; }
 	 
@@ -185,13 +175,16 @@ void DoFlashWrite() {
 	}
 	
 	fseek(src, 0, SEEK_END);
-    auto fileLength = ftell(src);
+    u32 fileLength = ftell(src);
     fseek(src, 0, SEEK_SET);
 	
-	// if ((u64)fileLength > (0x200 * SECTOR_SIZE)) {
-	if ((u64)fileLength != ((u64)NUM_SECTORS * SECTOR_SIZE)) {
+	u32 wholeSectorsToWrite = fileLength / SECTOR_SIZE;
+	u32 leftoverBytes = fileLength % SECTOR_SIZE;
+	u32 totalSectors = wholeSectorsToWrite + (leftoverBytes != 0);
+	
+	if (totalSectors > NUM_SECTORS) {
 		consoleClear();
-		printf("Flash dump filesize mismatch!\n");
+		printf("Flash dump too big!\n");
 		printf("Press [B] to abort.\n");
 		while(1) {
 			if (isDSi && cardEjected)return;
@@ -200,29 +193,64 @@ void DoFlashWrite() {
 			if(keysDown() & KEY_B)return;
 		}
 	}
-	
+
+	consoleClear();
+	DoWait(60);	
+	printf("About to write %d sectors.\n\n", (int)totalSectors);
+	printf("Press [A] to continue\n");
+	printf("Press [B] to abort\n");
+	while(1) {
+		if (isDSi && cardEjected)return;
+		swiWaitForVBlank();
+		scanKeys();
+		if(keysDown() & KEY_A)break;
+		if(keysDown() & KEY_B)return;
+	}
+
+	const char* finalMessage = "Flash write finished!\n\n";
 	textBuffer = "Writing file to Datel Cart.\n\n\nPlease Wait...\n\n\n";
 	textProgressBuffer = "Sectors Remaining: ";
-	ProgressTracker = NUM_SECTORS;
+	ProgressTracker = totalSectors;
 	activeIO = true;
-	eraseChip();
-	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
+	for (u32 sector = 0; sector < wholeSectorsToWrite; ++sector) {
 		if (isDSi && cardEjected) {
 			activeIO = false;
 			fclose(src);
 			return;
 		}
-		fseek(src, i, SEEK_SET);
-		fread(ReadBuffer, 1, SECTOR_SIZE, src);
-		// eraseSector(i);
-		writeSector(i, ReadBuffer);
-		if (ProgressTracker >= 0)ProgressTracker--;
+		u32 read = fread(WriteBuffer.data(), SECTOR_SIZE, 1, src);
+		if(read != 1) {
+			finalMessage = "Flash write failed!\n\n";
+			goto error;
+		}
+		readSector(sector * SECTOR_SIZE, ReadBuffer.data());
+		if(ReadBuffer != WriteBuffer) {
+			eraseSector(sector * SECTOR_SIZE);
+			writeSector(sector * SECTOR_SIZE, WriteBuffer.data());
+		}
+		ProgressTracker--;
 		UpdateProgressText = true;
 	}
+	if(leftoverBytes != 0) {
+		readSector(wholeSectorsToWrite * SECTOR_SIZE, ReadBuffer.data());
+		WriteBuffer = ReadBuffer;
+		u32 read = fread(WriteBuffer.data(), leftoverBytes, 1, src);
+		if(read != 1) {
+			finalMessage = "Flash write failed!\n\n";
+			goto error;
+		}
+		if(ReadBuffer != WriteBuffer) {
+			eraseSector(wholeSectorsToWrite * SECTOR_SIZE);
+			writeSector(wholeSectorsToWrite * SECTOR_SIZE, WriteBuffer.data());
+		}
+		ProgressTracker--;
+		UpdateProgressText = true;
+	}
+	error:
 	activeIO = false;
 	while (UpdateProgressText)swiWaitForVBlank();
 	consoleClear();
-	printf("Flash write finished!\n\n");
+	printf(finalMessage);
 	printf("Press [A] to return to main menu\n");
 	printf("Press [B] to exit\n");
 	while(1) {
@@ -260,9 +288,9 @@ void vblankHandler (void) {
 void DoCardWait() {
 	consoleClearTop(false);
 	while(true) {
+		if(CardInit() != 0xFFFF) return;
 		WaitForNewCard();
 		consoleClear();
-		if(CardInit() != 0xFFFF) return;
 		consoleClearTop(false);
 		PrintToTop("Cart Chip Id: %4X \n\n", checkFlashID(), true);
 		PrintToTop("Cart Type: UNKNOWN");
@@ -279,7 +307,7 @@ void PrintMainMenuText() {
 
 int MainMenu() {
 	int Value = -1;
-	memset(ReadBuffer, 0xFF, SECTOR_SIZE);
+	memset(ReadBuffer.data(), 0xFF, SECTOR_SIZE);
 	consoleClear();
 	PrintMainMenuText();
 	while(Value == -1) {
