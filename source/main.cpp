@@ -80,10 +80,20 @@ void DoFATerror(bool isFatel) {
 }
 
 u16 CardInit() {
+	if (isDSi && cardEjected && REG_SCFG_MC != 0x11)cardEjected = false;
 	consoleClear();
-	u16 chipID = init();
-	PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
-	PrintToTop("Cart Type: %s\n", productName(), false);
+	auto chipID = init();
+	auto cartName = productName();
+	if (chipID == 0xFFFF) {
+		cartName = "UNKNOWN";
+		printf("Not a supported cart!\n\nInsert it again...");
+	}
+	if (!cardEjected) {
+		PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
+		PrintToTop("Cart Type: %s\n", cartName, false);
+	} else if (cardEjected) {
+		consoleClearTop(false);
+	}
 	NUM_SECTORS = getFlashSectorsCount();
 	return chipID;
 }
@@ -288,13 +298,12 @@ void vblankHandler (void) {
 void DoCardWait() {
 	consoleClearTop(false);
 	while(true) {
-		if(CardInit() != 0xFFFF) return;
-		WaitForNewCard();
 		consoleClear();
+		if(CardInit() != 0xFFFF)return;
+		WaitForNewCard();
 		consoleClearTop(false);
 		PrintToTop("Cart Chip Id: %4X \n\n", checkFlashID(), true);
 		PrintToTop("Cart Type: UNKNOWN");
-		printf("Not a supported cart!\n\nInsert it again...");
 	}
 }
 
@@ -308,11 +317,13 @@ void PrintMainMenuText() {
 int MainMenu() {
 	int Value = -1;
 	memset(ReadBuffer.data(), 0xFF, SECTOR_SIZE);
+	memset(WriteBuffer.data(), 0xFF, SECTOR_SIZE);
 	consoleClear();
-	PrintMainMenuText();
+	if(!cardEjected)PrintMainMenuText();
 	while(Value == -1) {
 		if (cardEjected) {
 			consoleClear();
+			consoleClearTop(false);
 			DoCardWait();
 			PrintMainMenuText();
 			cardEjected = false;
@@ -350,7 +361,7 @@ int main() {
 	irqSet(IRQ_VBLANK, vblankHandler);
 
 	DoCardWait();
-	
+		
 	while(1) {
 		switch (MainMenu()) {
 			case 0: { DoFlashDump(); } break;
