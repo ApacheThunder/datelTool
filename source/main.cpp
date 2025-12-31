@@ -31,6 +31,7 @@ DTCM_DATA bool fatMounted = false;
 DTCM_DATA bool cardEjected = false;
 DTCM_DATA bool activeIO = false;
 DTCM_DATA bool isDSi = false;
+DTCM_DATA bool initialBoot = true;
 
 DTCM_DATA char gameTitle[13] = {0};
 
@@ -84,7 +85,7 @@ u16 CardInit() {
 	consoleClear();
 	auto chipID = init();
 	auto cartName = productName();
-	if (chipID == 0xFFFF) {
+	if (chipID == 0xFFFF && !initialBoot) {
 		cartName = "UNKNOWN";
 		printf("Not a supported cart!\n\nInsert it again...");
 	}
@@ -95,6 +96,7 @@ u16 CardInit() {
 		consoleClearTop(false);
 	}
 	NUM_SECTORS = getFlashSectorsCount();
+	initialBoot = false;
 	return chipID;
 }
 
