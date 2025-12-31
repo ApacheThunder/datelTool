@@ -89,11 +89,13 @@ u16 CardInit() {
 		cartName = "UNKNOWN";
 		printf("Not a supported cart!\n\nInsert it again...");
 	}
-	if (!cardEjected) {
-		PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
-		PrintToTop("Cart Type: %s\n", cartName, false);
-	} else if (cardEjected) {
-		consoleClearTop(false);
+	if (!initialBoot) {
+		if (!cardEjected) {
+			PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
+			PrintToTop("Cart Type: %s\n", cartName, false);
+		} else if (cardEjected) {
+			consoleClearTop(false);
+		}
 	}
 	NUM_SECTORS = getFlashSectorsCount();
 	initialBoot = false;
