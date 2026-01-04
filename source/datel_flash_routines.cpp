@@ -36,6 +36,44 @@ uint8_t chipType = TYPE1;
 uint16_t currentChipID = 0xFFFF;
 
 
+void closeSpi() {
+	REG_AUXSPICNT = 0x40;
+}
+
+int startAddress;
+
+void openSpi (uint8_t commandByte) {
+	volatile u32 temp;
+
+	C_REG_AUXSPICNTH = C_CARD_CR1_ENABLE | C_CARD_CR1_IRQ;
+	C_REG_CARD_COMMAND[0] = 0xF0;
+	C_REG_CARD_COMMAND[1] = 0x01;
+	C_REG_CARD_COMMAND[2] = 0x00;
+	C_REG_CARD_COMMAND[3] = 0x00;
+	C_REG_CARD_COMMAND[4] = 0x00;
+	C_REG_CARD_COMMAND[5] = commandByte;			// 0xCC == enable microSD ?
+	C_REG_CARD_COMMAND[6] = 0x00;
+	C_REG_CARD_COMMAND[7] = 0x00;
+	C_REG_ROMCTRL = C_CARD_CR2_SETTINGS;
+
+	while (REG_ROMCTRL & CARD_BUSY) {
+		temp = C_REG_CARD_DATA_RD;
+	}
+	REG_AUXSPICNT = 0xA040;
+}
+inline void writeSpiByte(uint8_t byte);
+void initiateCommandSequence() {
+	openSpi(0);
+	writeSpiByte(6);
+	closeSpi();
+}
+
+void terminateCommandSequence() {
+	openSpi(0);
+	writeSpiByte(7);
+	closeSpi();
+}
+
 const char* productName() {
 	switch(productType) {
 		case GAMES_N_MUSIC:
@@ -78,7 +116,7 @@ uint16_t getFlashSectorsCount() {
 		case GAMES_N_MUSIC:
 			return 128;
 		case ACTION_REPLAY_DS:
-			return 256;
+			return 1024;
 		default: 
 			return 128;
 	}
@@ -139,6 +177,16 @@ void writeSpiu24(uint32_t word) {
 	REG_AUXSPICNT = CARD_SPI_HOLD;
 }
 
+void setStartAddress(uint32_t address) {
+  openSpi(0);
+  writeSpiByte(0);
+  auto pbVar1 = (uint8_t*)&address;
+  writeSpiByte(pbVar1[0]);
+  writeSpiByte(pbVar1[1]);
+  writeSpiByte(pbVar1[2]);
+  closeSpi();
+}
+
 void writeAddrLine(uint address) {
 	writeSpiu24<0xE3>(address);
 }
@@ -179,6 +227,7 @@ void waitWriteDone() {
 }
 
 void eraseSector(uint32_t sectorAddr) {
+	return;
 	writeAddrLine(MAIN_ADDR);
 	writeDataLine(0xAA);
 
@@ -201,6 +250,7 @@ void eraseSector(uint32_t sectorAddr) {
 }
 
 void eraseChip() {
+	return;
 	writeAddrLine(MAIN_ADDR);
 	writeDataLine(0xAA);
 
@@ -240,54 +290,86 @@ void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff) {
 	}
 }
 
-void readSector(uint32_t sectorAddr, uint8_t* outBuff) {
-	readFromFlashAddress(sectorAddr, outBuff, 0x1000);
+// void readSector(uint32_t sectorAddr, uint8_t* outBuff) {
+	// readFromFlashAddress(sectorAddr, outBuff, 0x1000);
+// }
+
+void readSector(uint32_t addr, uint8_t* param_1) {
+	uint16_t uVar1;
+	int iVar2;
+
+	initiateCommandSequence();
+	setStartAddress(addr);
+	openSpi(0);
+	writeSpiByte(5);
+	iVar2 = 0;
+	do {
+		*param_1 = (uint8_t)readSpiByte();
+		iVar2 = iVar2 + 1;
+		param_1 = param_1 + 1;
+	} while (iVar2 != 0x1000);
+	closeSpi();
+	terminateCommandSequence();
 }
+
+
 
 uint16_t readChipID() {
-	writeAddrLine(MAIN_ADDR);
-	writeDataLine(0xAA);
+	uint8_t ret[2]{};
+	initiateCommandSequence();
+	// startAddress = 1;
+	setStartAddress(1);
 
-	writeAddrLine(OTHER_ADDR);
-	writeDataLine(0x55);
+	openSpi(0);
+	writeSpiByte(1);
+	writeSpiByte(0xAA);
+	writeSpiByte(0x55);
+	writeSpiByte(0x90);
+	closeSpi();
 
-	writeAddrLine(MAIN_ADDR);
-	writeDataLine(0x90);
+	openSpi(0);
+	writeSpiByte(4);
+	ret[1] = readSpiByte();
+	closeSpi();
 
-	writeAddrLine(0);
+	openSpi(0);
+	writeSpiByte(2);
+	writeSpiByte(0xF0);
+	closeSpi();
+	terminateCommandSequence();
 
-	uint16_t ret;
-	readBytesFromSpi(reinterpret_cast<uint8_t*>(&ret), 2);
+	initiateCommandSequence();
 
-	writeDataLine(0xF0);
+	startAddress = 0;
+	setStartAddress(0);
 
-	return ret;
-}
+	openSpi(0);
+	writeSpiByte(1);
+	writeSpiByte(0xAA);
+	writeSpiByte(0x55);
+	writeSpiByte(0x90);
+	closeSpi();
 
-u32 openSpi (uint8_t commandByte) {
-	volatile u32 temp;
+	openSpi(0);
+	writeSpiByte(4);
+	ret[0] = readSpiByte();
+	closeSpi();
 
-	C_REG_AUXSPICNTH = C_CARD_CR1_ENABLE | C_CARD_CR1_IRQ;
-	C_REG_CARD_COMMAND[0] = 0xF2;
-	C_REG_CARD_COMMAND[1] = 0x00;
-	C_REG_CARD_COMMAND[2] = 0x00;
-	C_REG_CARD_COMMAND[3] = 0x00;
-	C_REG_CARD_COMMAND[4] = 0x00;
-	C_REG_CARD_COMMAND[5] = commandByte;			// 0xCC == enable microSD ?
-	C_REG_CARD_COMMAND[6] = 0x00;
-	C_REG_CARD_COMMAND[7] = 0x00;
-	C_REG_ROMCTRL = C_CARD_CR2_SETTINGS;
+	openSpi(0);
+	writeSpiByte(2);
+	writeSpiByte(0xF0);
+	closeSpi();
+	terminateCommandSequence();
 
-	while (REG_ROMCTRL & CARD_BUSY) {
-		temp = C_REG_CARD_DATA_RD;
-	}
-	return temp;
+
+	return (ret[1] << 8) | ret[0];
 }
 
 uint16_t init() {
 	productType = ACTION_REPLAY_DS;
 	chipType = TYPE1;
-	openSpi(0);
+	// return readChipID();
+	// openSpi(0);
 	if(auto chip_id = readChipID(); std::find(ards_flash_ids.begin(), ards_flash_ids.end(), chip_id) != ards_flash_ids.end()) {
 		return chip_id;
 	}

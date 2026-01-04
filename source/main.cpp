@@ -79,24 +79,24 @@ void DoFATerror(bool isFatel) {
 		if(keysDown() != 0) return;
 	}
 }
-
+uint16_t chipID;
 u16 CardInit() {
 	if (isDSi && cardEjected && REG_SCFG_MC != 0x11)cardEjected = false;
 	consoleClear();
-	auto chipID = init();
+	chipID = init();
 	auto cartName = productName();
-	if (chipID == 0xFFFF && !initialBoot) {
-		cartName = "UNKNOWN";
-		printf("Not a supported cart!\n\nInsert it again...");
-	}
-	if (!initialBoot) {
-		if (!cardEjected) {
+	// if (chipID == 0xFFFF && !initialBoot) {
+		// cartName = "UNKNOWN";
+		// printf("Not a supported cart!\n\nInsert it again...");
+	// }
+	// if (!initialBoot) {
+		// if (!cardEjected) {
 			PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
 			PrintToTop("Cart Type: %s\n", cartName, false);
-		} else if (cardEjected) {
-			consoleClearTop(false);
-		}
-	}
+		// } else if (cardEjected) {
+			// consoleClearTop(false);
+		// }
+	// }
 	NUM_SECTORS = getFlashSectorsCount();
 	initialBoot = false;
 	return chipID;
@@ -306,7 +306,7 @@ void DoCardWait() {
 		if(CardInit() != 0xFFFF)return;
 		WaitForNewCard();
 		consoleClearTop(false);
-		PrintToTop("Cart Chip Id: %4X \n\n", checkFlashID(), true);
+		PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
 		PrintToTop("Cart Type: UNKNOWN");
 	}
 }
