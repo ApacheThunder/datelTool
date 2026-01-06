@@ -70,7 +70,7 @@ void DoFATerror(bool isFatel) {
 }
 
 u16 CardInit() {
-	if (isDSi && cardEjected && REG_SCFG_MC != 0x11)cardEjected = false;
+	if (cardEjected)cardEjected = !CardIsPresent();
 	consoleClear();
 	if(!init()) {
 		return 0xFFFF;
@@ -281,7 +281,7 @@ void vblankHandler (void) {
 	}
 	
 	if (isDSi) {
-		if (!cardEjected && REG_SCFG_MC == 0x11) {
+		if (!cardEjected && !CardIsPresent()) {
 			consoleClearTop(false);
 			cardEjected = true;
 		}
@@ -297,8 +297,6 @@ void DoCardWait() {
 		if(CardInit() != 0xFFFF)return;
 		WaitForNewCard();
 		consoleClearTop(false);
-		// PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
-		// PrintToTop("Cart Type: UNKNOWN");
 	}
 }
 
@@ -316,12 +314,14 @@ int MainMenu() {
 	consoleClear();
 	if(!cardEjected)PrintMainMenuText();
 	while(Value == -1) {
+		if (!isDSi) {
+			cardEjected = !CardIsPresent();
+		}
 		if (cardEjected) {
 			consoleClear();
 			consoleClearTop(false);
 			DoCardWait();
 			PrintMainMenuText();
-			cardEjected = false;
 		}
 		swiWaitForVBlank();
 		scanKeys();
