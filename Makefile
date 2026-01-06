@@ -12,10 +12,12 @@ GAME_SUBTITLE	:= Flash Dumper & Writer
 GAME_AUTHOR := by Apache Thunder & edo9300
 GAME_ICON := icon.png
 GFXDIRS := graphics
+CXXFLAGS = -std=c++26
 
 # Libraries
 
 include $(BLOCKSDS)/sys/default_makefiles/rom_arm9/Makefile
+
 
 $(ROM): $(ELF)
 	@echo "  NDSTOOL $@"

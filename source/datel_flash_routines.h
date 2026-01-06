@@ -3,24 +3,27 @@
 
 #include <nds/ndstypes.h>
 
+enum class PROTOCOL_MODE {
+	GNM,
+	AR_DSiME,
+};
+
 enum DATEL_TYPE {
-	ACTION_REPLAY_DS 	= 0x00,
-	GAMES_N_MUSIC 		= 0x01
+	GAMES_N_MUSIC = 1,
+	ACTION_REPLAY_DS = 2,
+	ACTION_REPLAY_DSiME = 4,
 };
 
-enum CHIP_TYPE {
-	TYPE1 = 0x00,
-	TYPE2 = 0x01
-};
-
-uint16_t init();
+bool init();
+PROTOCOL_MODE getProtocolMode();
 void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff);
 void readSector(uint32_t sectorAddr, uint8_t* outBuff);
 void eraseChip();
 void eraseSector(uint32_t sectorAddr);
 const char* productName();
+const char* getFlashChipName();
+uint16_t getFlashChipId();
 uint16_t getFlashSectorsCount();
-uint16_t checkFlashID();
 
 #endif // DATEL_FLASH_ROUTINES
 
