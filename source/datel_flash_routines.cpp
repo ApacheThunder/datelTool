@@ -540,7 +540,7 @@ uint16_t getFlashSectorsCount() {
 	auto count = selected_chip->sectorCount;
 
 	if(protocolMode == PROTOCOL_MODE::GNM) {
-		return std::max<uint16_t>(256, count);
+		return std::min<uint16_t>(256, count);
 	}
 	
 	return count;

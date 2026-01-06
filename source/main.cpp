@@ -41,21 +41,13 @@ DTCM_DATA bool UpdateProgressText;
 DTCM_DATA const char* textBuffer = "X------------------------------X\nX------------------------------X";
 DTCM_DATA const char* textProgressBuffer = "X------------------------------X\nX------------------------------X";
 
-DTCM_DATA const char* ValidPaths[] = {
-	"/datelTool/datel-backup.bin",
-	"/datelTool/ards-backup.bin",
-	"/datelTool/gnm-backup.bin"
-};
-
-
 const char* DumpFilePath() {
 	static char nameBuff[512];
 	const auto* chipName = getFlashChipName();
-	sprintf(nameBuff, "/datelTool/%s%s", getProtocolMode() == PROTOCOL_MODE::AR_DSiME ? "dsi-" : "", chipName);
+	sprintf(nameBuff, "/datelTool/%s%s.bin", chipName, getProtocolMode() == PROTOCOL_MODE::AR_DSiME ? "-dsi" : "");
 	
 	return nameBuff;
 }
-
 
 void DoWait(int waitTime = 30) {
 	if (waitTime > 0)for (int i = 0; i < waitTime; i++) { swiWaitForVBlank(); }
@@ -76,6 +68,7 @@ void DoFATerror(bool isFatel) {
 		if(keysDown() != 0) return;
 	}
 }
+
 u16 CardInit() {
 	if (isDSi && cardEjected && REG_SCFG_MC != 0x11)cardEjected = false;
 	consoleClear();
@@ -88,14 +81,12 @@ u16 CardInit() {
 	if (chipID == 0xFFFF && !initialBoot) {
 		printf("Not a supported cart!\n\nInsert it again...");
 	}
-	if (!initialBoot) {
-		if (!cardEjected) {
-			PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
-			PrintToTop("Cart Type: %s\n", cartName, false);
-			PrintToTop("Chip Name: %s\n", chipName, false);
-		} else if (cardEjected) {
-			consoleClearTop(false);
-		}
+	if (!cardEjected) {
+		PrintToTop("%s\n", cartName, true);
+		PrintToTop("Cart Chip Id: %4X \n", chipID, false);
+		PrintToTop("Chip Name: %s\n", chipName, false);
+	} else if (cardEjected) {
+		consoleClearTop(false);
 	}
 	NUM_SECTORS = getFlashSectorsCount();
 	initialBoot = false;
