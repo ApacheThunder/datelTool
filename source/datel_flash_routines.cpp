@@ -155,7 +155,7 @@ void sendCommandSequence(std::span<const uint8_t> seq) {
 }
 
 void waitWriteDone() {
-	SPI_TRANSACTION(WRITE_ENABLE,
+	SPI_TRANSACTION(READ_ENABLE,
 	[&] {
 		uint8_t val = readSpiByte() & 0x40;
 		while(true) {
