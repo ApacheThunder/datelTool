@@ -41,24 +41,13 @@ DTCM_DATA bool UpdateProgressText;
 DTCM_DATA const char* textBuffer = "X------------------------------X\nX------------------------------X";
 DTCM_DATA const char* textProgressBuffer = "X------------------------------X\nX------------------------------X";
 
-DTCM_DATA const char* ValidPaths[] = {
-	"/datelTool/datel-backup.bin",
-	"/datelTool/ards-backup.bin",
-	"/datelTool/gnm-backup.bin"
-};
-
-
 const char* DumpFilePath() {
-	switch (productType) {
-		case ACTION_REPLAY_DS: 
-			return ValidPaths[1];
-		case GAMES_N_MUSIC:
-			return ValidPaths[2];
-		default:
-			return ValidPaths[0];
-	}
+	static char nameBuff[512];
+	const auto* chipName = getFlashChipName();
+	sprintf(nameBuff, "/datelTool/%s%s.bin", chipName, getProtocolMode() == PROTOCOL_MODE::AR_DSiME ? "-dsi" : "");
+	
+	return nameBuff;
 }
-
 
 void DoWait(int waitTime = 30) {
 	if (waitTime > 0)for (int i = 0; i < waitTime; i++) { swiWaitForVBlank(); }
@@ -81,21 +70,23 @@ void DoFATerror(bool isFatel) {
 }
 
 u16 CardInit() {
-	if (isDSi && cardEjected && REG_SCFG_MC != 0x11)cardEjected = false;
+	if (cardEjected)cardEjected = !CardIsPresent();
 	consoleClear();
-	auto chipID = init();
+	if(!init()) {
+		return 0xFFFF;
+	}
+	auto chipID = getFlashChipId();
 	auto cartName = productName();
+	auto chipName = getFlashChipName();
 	if (chipID == 0xFFFF && !initialBoot) {
-		cartName = "UNKNOWN";
 		printf("Not a supported cart!\n\nInsert it again...");
 	}
-	if (!initialBoot) {
-		if (!cardEjected) {
-			PrintToTop("Cart Chip Id: %4X \n\n", chipID, true);
-			PrintToTop("Cart Type: %s\n", cartName, false);
-		} else if (cardEjected) {
-			consoleClearTop(false);
-		}
+	if (!cardEjected) {
+		PrintToTop("%s\n", cartName, true);
+		PrintToTop("Cart Chip Id: %4X \n", chipID, false);
+		PrintToTop("Chip Name: %s\n", chipName, false);
+	} else if (cardEjected) {
+		consoleClearTop(false);
 	}
 	NUM_SECTORS = getFlashSectorsCount();
 	initialBoot = false;
@@ -136,7 +127,7 @@ void DoFlashDump() {
 	textProgressBuffer = "Sectors Remaining: ";
 	ProgressTracker = NUM_SECTORS;
 	activeIO = true;
-	for (uint i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
+	for (uint32_t i = 0; i < (NUM_SECTORS * SECTOR_SIZE); i += SECTOR_SIZE) {
 		if (isDSi && cardEjected) {
 			activeIO = false;
 			fflush(dest);
@@ -290,7 +281,7 @@ void vblankHandler (void) {
 	}
 	
 	if (isDSi) {
-		if (!cardEjected && REG_SCFG_MC == 0x11) {
+		if (!cardEjected && !CardIsPresent()) {
 			consoleClearTop(false);
 			cardEjected = true;
 		}
@@ -306,8 +297,6 @@ void DoCardWait() {
 		if(CardInit() != 0xFFFF)return;
 		WaitForNewCard();
 		consoleClearTop(false);
-		PrintToTop("Cart Chip Id: %4X \n\n", checkFlashID(), true);
-		PrintToTop("Cart Type: UNKNOWN");
 	}
 }
 
@@ -325,12 +314,14 @@ int MainMenu() {
 	consoleClear();
 	if(!cardEjected)PrintMainMenuText();
 	while(Value == -1) {
+		if (!isDSi) {
+			cardEjected = !CardIsPresent();
+		}
 		if (cardEjected) {
 			consoleClear();
 			consoleClearTop(false);
 			DoCardWait();
 			PrintMainMenuText();
-			cardEjected = false;
 		}
 		swiWaitForVBlank();
 		scanKeys();

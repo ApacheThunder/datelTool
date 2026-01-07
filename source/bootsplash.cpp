@@ -78,7 +78,7 @@ void BootSplashInit() {
 	
 	
 	consoleSetWindow(&btConsole, 0, 6, 32, 20);
-	consoleSetWindow(&tpConsole, 4, 20, 28, 4);
+	consoleSetWindow(&tpConsole, 4, 20, 28, 8);
 	
 	// Load graphics after font or else you get palette conflicts. :P
 	dmaCopy(topLogoBitmap, bgGetGfxPtr(bg), 256*256);

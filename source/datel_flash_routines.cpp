@@ -6,100 +6,54 @@
 #include <fat.h>
 
 #include "datel_flash_routines.h"
+#include <array>
+#include <algorithm>
 
-// The following were taken from libnds
-#define	C_REG_CARD_DATA_RD	(*(vu32*)0x04100010)
-#define C_REG_AUXSPICNT		(*(vu16*)0x040001A0)
-#define C_REG_AUXSPICNTH	(*(vu8*)0x040001A1)
-#define C_REG_AUXSPIDATA	(*(vu8*)0x040001A2)
-#define C_REG_ROMCTRL		(*(vu32*)0x040001A4)
-#define C_REG_CARD_COMMAND	((vu8*)0x040001A8)
-#define C_CARD_CR1_ENABLE	0x80	// in byte 1, i.e. 0x8000
-#define C_CARD_CR1_IRQ		0x40	// in byte 1, i.e. 0x4000
-#define C_CARD_BUSY			(1<<31)	// when reading, still expecting incomming data?
-#define C_CARD_SPI_BUSY		(1<<7)
-#define C_CARD_CR1_EN		0x8000
-#define	C_CARD_CR1_SPI_EN	0x2000
-#define	C_CARD_CR1_SPI_HOLD	0x40
-//---------------------------------------------------------------------------------
+#include <span>
 
-#define SD_COMMAND_TIMEOUT 0xFFF
-#define SD_WRITE_TIMEOUT 0xFFFF
-#define C_CARD_CR2_SETTINGS 0xA0586000
+typedef struct flash_chip_t {
+	uint16_t id;
+	const char* name;
+	uint8_t foundInProducts;
+	uint16_t commandSequenceOddAddress;
+	uint8_t sectorEraseCommand;
+	uint32_t sectorSize;
+	uint16_t sectorCount;
+} flash_chip_t;
 
-#define MAIN_ADDR getMainAddr()
-#define OTHER_ADDR getSecondAddr()
-#define SECTOR_ERASE_COMMAND getSectorEraseComman()
+namespace {
 
-uint8_t productType = ACTION_REPLAY_DS;
-uint8_t chipType = TYPE1;
-uint16_t currentChipID = 0xFFFF;
+PROTOCOL_MODE protocolMode;
 
+static flash_chip_t unknown_chip{0xFFFF, "Unknown", 0};
 
-const char* productName() {
-	switch(productType) {
-		case GAMES_N_MUSIC:
-			return "GAMES n' MUSIC";
-		case ACTION_REPLAY_DS:
-			return "ACTION REPLAY";
-		default: 
-			return "UNKNOWN";
-	}
-}
+const flash_chip_t* selected_chip = &unknown_chip;
 
-static inline uint16_t getMainAddr() {
-	switch (chipType) {
-		case TYPE1: 
-			return 0x0AAA;
-		case TYPE2: 
-			return 0x5555;
-		default:
-			return 0;
-	}
-}
+static constexpr std::array known_flash_chips {
+	flash_chip_t{.id = 0xC8BF, .name = "SST39VF1681", .foundInProducts = ACTION_REPLAY_DSiME | ACTION_REPLAY_DS, .commandSequenceOddAddress = 0x0AAA, .sectorEraseCommand = 0x50, .sectorSize = 0x1000, .sectorCount = 512},
+	flash_chip_t{.id = 0xC9BF, .name = "SST39VF1682", .foundInProducts = ACTION_REPLAY_DS   , .commandSequenceOddAddress = 0x0AAA, .sectorEraseCommand = 0x50, .sectorSize = 0x1000, .sectorCount = 512},
 
-static inline uint16_t getSecondAddr() {
-	return getMainAddr() / 2;
-}
+	// these flash chips also have top/bottom orientation with varying sector size
+	flash_chip_t{.id = 0xC41C, .name = "EN29LV160BT", .foundInProducts = ACTION_REPLAY_DSiME, .commandSequenceOddAddress = 0x0AAA, .sectorEraseCommand = 0x30, .sectorSize = 0x10000, .sectorCount = 64},
+	flash_chip_t{.id = 0x491C, .name = "EN29LV160BB", .foundInProducts = ACTION_REPLAY_DSiME, .commandSequenceOddAddress = 0x0AAA, .sectorEraseCommand = 0x30, .sectorSize = 0x10000, .sectorCount = 64},
+	flash_chip_t{.id = 0xF61C, .name = "EN29LV320AT", .foundInProducts = ACTION_REPLAY_DSiME, .commandSequenceOddAddress = 0x0AAA, .sectorEraseCommand = 0x30, .sectorSize = 0x10000, .sectorCount = 64},
+	flash_chip_t{.id = 0xF91C, .name = "EN29LV320AB", .foundInProducts = ACTION_REPLAY_DSiME, .commandSequenceOddAddress = 0x0AAA, .sectorEraseCommand = 0x30, .sectorSize = 0x10000, .sectorCount = 64},
 
-static inline uint8_t getSectorEraseComman() {
-	switch (chipType) {
-		case TYPE1: 
-			return 0x50;
-		case TYPE2: 
-			return 0x30;
-		default:
-			return 0;
-	}
-}
-
-uint16_t getFlashSectorsCount() {
-	switch(productType) {
-		case GAMES_N_MUSIC:
-			return 128;
-		case ACTION_REPLAY_DS:
-			return 256;
-		default: 
-			return 128;
-	}
-}
-
-static constexpr std::array ards_flash_ids {
-	uint16_t{0xC8BF},
-	uint16_t{0xC9BF},
+	flash_chip_t{.id = 0xD4BF, .name = "SST39LF_VF512", .foundInProducts = GAMES_N_MUSIC    , .commandSequenceOddAddress = 0x5555, .sectorEraseCommand = 0x30, .sectorSize = 0x1000, .sectorCount = 16},
+	flash_chip_t{.id = 0xD5BF, .name = "SST39LF_VF010", .foundInProducts = GAMES_N_MUSIC    , .commandSequenceOddAddress = 0x5555, .sectorEraseCommand = 0x30, .sectorSize = 0x1000, .sectorCount = 32},
+	flash_chip_t{.id = 0xD6BF, .name = "SST39LF_VF020", .foundInProducts = GAMES_N_MUSIC    , .commandSequenceOddAddress = 0x5555, .sectorEraseCommand = 0x30, .sectorSize = 0x1000, .sectorCount = 64},
+	flash_chip_t{.id = 0xD7BF, .name = "SST39LF_VF040", .foundInProducts = GAMES_N_MUSIC    , .commandSequenceOddAddress = 0x5555, .sectorEraseCommand = 0x30, .sectorSize = 0x1000, .sectorCount = 128},
 };
 
-static constexpr std::array ards_type2_flash_ids {
-	uint16_t{0xD8BF},
+static const flash_chip_t* get_flash_chip(uint16_t flash_id) {
+	auto it = std::ranges::find_if(known_flash_chips, [&](const auto& flash_chip){
+		return flash_chip.id == flash_id;
+	});
+	if(it != known_flash_chips.end()) {
+		return &*it;
+	}
+	return &unknown_chip;
 };
-
-static constexpr std::array gnm_flash_ids {
-	uint16_t{0xD4BF},
-	uint16_t{0xD5BF},
-	uint16_t{0xD6BF},
-	uint16_t{0xD7BF},
-};
-
 
 inline void writeSpiByte(uint8_t byte) {
 	REG_AUXSPIDATA = byte;
@@ -111,6 +65,217 @@ inline uint8_t readSpiByte() {
 	while ((REG_AUXSPICNT & CARD_SPI_BUSY) != 0);
 	return REG_AUXSPIDATA;
 }
+
+#define CARD_CR2_SETTINGS 0xA0586000
+
+namespace ARDSiME {
+
+void setSpiMode() {
+	REG_AUXSPICNT = CARD_ENABLE | CARD_IRQ;
+	REG_CARD_COMMAND[0] = 0xF0;
+	REG_CARD_COMMAND[1] = 0x01;
+	REG_CARD_COMMAND[2] = 0x00;
+	REG_CARD_COMMAND[3] = 0x00;
+	REG_CARD_COMMAND[4] = 0x00;
+	REG_CARD_COMMAND[5] = 0x00;
+	REG_CARD_COMMAND[6] = 0x00;
+	REG_CARD_COMMAND[7] = 0x00;
+	REG_ROMCTRL = CARD_CR2_SETTINGS;
+
+	while (REG_ROMCTRL & CARD_BUSY) {
+		volatile auto _ = REG_CARD_DATA_RD;
+	}
+}
+
+#define SET_ADDRESS 0
+
+#define COMMAND_SEQUENCE 1
+
+#define AUTO_INCREMENT BIT(0)
+#define WRITE_ENABLE BIT(1)
+#define READ_ENABLE BIT(2)
+
+struct spiGuard {
+	spiGuard() {
+		REG_AUXSPICNT = CARD_ENABLE | CARD_SPI_ENABLE | CARD_SPI_HOLD;
+	}
+	~spiGuard() {
+		REG_AUXSPICNT = CARD_SPI_HOLD;
+	}
+};
+
+inline auto SPI_TRANSACTION(uint8_t command_mode, auto function) {
+	spiGuard _;
+	writeSpiByte(command_mode);
+	return function();
+}
+
+inline auto SPI_TRANSACTION(uint8_t command_mode) {
+	return SPI_TRANSACTION(command_mode, [] -> void {});
+}
+
+struct spiCommandGuard {
+	spiCommandGuard() {
+		SPI_TRANSACTION(6);
+	}
+	~spiCommandGuard() {
+		SPI_TRANSACTION(7);
+	}
+};
+
+inline auto SPI_COMMAND(auto function) {
+	struct spiCommandGuard {
+		spiCommandGuard() {
+			SPI_TRANSACTION(6);
+		}
+		~spiCommandGuard() {
+			SPI_TRANSACTION(7);
+		}
+	} _;
+	return function();
+}
+
+void setStartAddress(uint32_t startAddress) {
+	SPI_TRANSACTION(SET_ADDRESS,
+	[&] {
+		auto addr = (uint8_t*)&startAddress;
+		writeSpiByte(addr[0]);
+		writeSpiByte(addr[1]);
+		writeSpiByte(addr[2]);
+	});
+}
+
+void sendCommandSequence(std::span<const uint8_t> seq) {
+	SPI_TRANSACTION(COMMAND_SEQUENCE,
+	[&] {
+		for(auto byte : seq) {
+			writeSpiByte(byte);
+		}
+	});
+}
+
+void waitWriteDone() {
+	SPI_TRANSACTION(READ_ENABLE,
+	[&] {
+		uint8_t val = readSpiByte() & 0x40;
+		while(true) {
+			auto val2 = readSpiByte() & 0x40;
+			if(val2 == val) {
+				break;
+			}
+			val = val2;
+		}
+	});
+}
+
+void eraseChip() {
+	SPI_COMMAND([&] {
+		sendCommandSequence({0xAA, 0x55, 0x80, 0xAA, 0x55, 0x10});
+		waitWriteDone();
+	});
+}
+
+void eraseSector(uint32_t address) {
+	SPI_COMMAND([&] {
+		setStartAddress(address);
+		sendCommandSequence({0xAA, 0x55, 0x80, 0xAA, 0x55});
+		SPI_TRANSACTION(WRITE_ENABLE,
+		[&] {
+			// Erase command for this chip id
+			writeSpiByte(selected_chip->sectorEraseCommand);
+		});
+		waitWriteDone();
+	});
+}
+
+void readFromFlashAddress(uint32_t address, uint8_t* outBuff, uint32_t len) {
+	SPI_COMMAND([&] {
+		setStartAddress(address);
+		SPI_TRANSACTION(READ_ENABLE | AUTO_INCREMENT,
+		[&] {
+			for (uint32_t i = 0; i < len; ++i) {
+				outBuff[i] = readSpiByte();
+			}
+		});
+	});
+}
+
+void writeSector(uint32_t address, uint8_t* inBuff) {
+	SPI_COMMAND([&] {
+		setStartAddress(address);
+		for(int i = 0; i < 0x1000; ++i) {
+			sendCommandSequence({0xAA, 0x55, 0xA0});
+
+			SPI_TRANSACTION(WRITE_ENABLE | AUTO_INCREMENT,
+			[&] {
+				writeSpiByte(inBuff[i]);
+			});
+
+			waitWriteDone();
+		}
+	});
+}
+
+uint16_t readChipID_EON_Flash() {
+	auto ret1 = SPI_COMMAND([&] {
+		// Manufacturer ID
+		setStartAddress(0x200);
+		sendCommandSequence({0xAA, 0x55, 0x90});
+
+		auto ret = SPI_TRANSACTION(READ_ENABLE,
+		[&] {
+			return readSpiByte();
+		});
+
+		SPI_TRANSACTION(WRITE_ENABLE,
+		[&] {
+			writeSpiByte(0xf0);
+		});
+		return ret;
+	});
+
+	auto ret2 = SPI_COMMAND([&] {
+		// Device ID
+		setStartAddress(2);
+		sendCommandSequence({0xAA, 0x55, 0x90});
+
+		auto ret = SPI_TRANSACTION(READ_ENABLE,
+		[&] {
+			return readSpiByte();
+		});
+
+		SPI_TRANSACTION(WRITE_ENABLE,
+		[&] {
+			writeSpiByte(0xf0);
+		});
+		return ret;
+	});
+	return ret1 << 8 | ret2;
+}
+
+uint16_t readChipID() {
+	return SPI_COMMAND([&] {
+		setStartAddress(0);
+		sendCommandSequence({0xAA, 0x55, 0x90});
+
+		auto ret = SPI_TRANSACTION(READ_ENABLE | AUTO_INCREMENT,
+		[&] {
+			auto ret1 = readSpiByte();
+			auto ret2 = readSpiByte();
+			return ret1 | (ret2 << 8);
+		});
+
+		SPI_TRANSACTION(WRITE_ENABLE,
+		[&] {
+			writeSpiByte(0xF0);
+		});
+		return ret;
+	});
+
+}
+}
+
+namespace GNM {
 
 void writeDataLines(uint8_t* buff, int len) {
 	REG_AUXSPICNT = CARD_ENABLE | CARD_SPI_ENABLE | CARD_SPI_HOLD;
@@ -139,7 +304,7 @@ void writeSpiu24(uint32_t word) {
 	REG_AUXSPICNT = CARD_SPI_HOLD;
 }
 
-void writeAddrLine(uint address) {
+void writeAddrLine(uint32_t address) {
 	writeSpiu24<0xE3>(address);
 }
 
@@ -179,6 +344,8 @@ void waitWriteDone() {
 }
 
 void eraseSector(uint32_t sectorAddr) {
+	const auto MAIN_ADDR = selected_chip->commandSequenceOddAddress;
+	const auto OTHER_ADDR = selected_chip->commandSequenceOddAddress / 2;
 	writeAddrLine(MAIN_ADDR);
 	writeDataLine(0xAA);
 
@@ -195,12 +362,14 @@ void eraseSector(uint32_t sectorAddr) {
 	writeDataLine(0x55);
 
 	writeAddrLine(sectorAddr);
-	writeDataLine(SECTOR_ERASE_COMMAND);
+	writeDataLine(selected_chip->sectorEraseCommand);
 
 	waitWriteDone();
 }
 
 void eraseChip() {
+	const auto MAIN_ADDR = selected_chip->commandSequenceOddAddress;
+	const auto OTHER_ADDR = selected_chip->commandSequenceOddAddress / 2;
 	writeAddrLine(MAIN_ADDR);
 	writeDataLine(0xAA);
 
@@ -223,6 +392,8 @@ void eraseChip() {
 }
 
 void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff) {
+	const auto MAIN_ADDR = selected_chip->commandSequenceOddAddress;
+	const auto OTHER_ADDR = selected_chip->commandSequenceOddAddress / 2;
 	for(int i = 0; i < 0x1000; ++i) {
 		writeAddrLine(MAIN_ADDR);
 		writeDataLine(0xAA);
@@ -240,18 +411,14 @@ void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff) {
 	}
 }
 
-void readSector(uint32_t sectorAddr, uint8_t* outBuff) {
-	readFromFlashAddress(sectorAddr, outBuff, 0x1000);
-}
-
-uint16_t readChipID() {
-	writeAddrLine(MAIN_ADDR);
+uint16_t readChipID(uint32_t oddAddr) {
+	writeAddrLine(oddAddr);
 	writeDataLine(0xAA);
 
-	writeAddrLine(OTHER_ADDR);
+	writeAddrLine(oddAddr / 2);
 	writeDataLine(0x55);
 
-	writeAddrLine(MAIN_ADDR);
+	writeAddrLine(oddAddr);
 	writeDataLine(0x90);
 
 	writeAddrLine(0);
@@ -264,53 +431,121 @@ uint16_t readChipID() {
 	return ret;
 }
 
-u32 openSpi (uint8_t commandByte) {
-	volatile u32 temp;
-
-	C_REG_AUXSPICNTH = C_CARD_CR1_ENABLE | C_CARD_CR1_IRQ;
-	C_REG_CARD_COMMAND[0] = 0xF2;
-	C_REG_CARD_COMMAND[1] = 0x00;
-	C_REG_CARD_COMMAND[2] = 0x00;
-	C_REG_CARD_COMMAND[3] = 0x00;
-	C_REG_CARD_COMMAND[4] = 0x00;
-	C_REG_CARD_COMMAND[5] = commandByte;			// 0xCC == enable microSD ?
-	C_REG_CARD_COMMAND[6] = 0x00;
-	C_REG_CARD_COMMAND[7] = 0x00;
-	C_REG_ROMCTRL = C_CARD_CR2_SETTINGS;
+void setSpiMode() {
+	REG_AUXSPICNT = CARD_ENABLE | CARD_IRQ;
+	REG_CARD_COMMAND[0] = 0xF2;
+	REG_CARD_COMMAND[1] = 0x00;
+	REG_CARD_COMMAND[2] = 0x00;
+	REG_CARD_COMMAND[3] = 0x00;
+	REG_CARD_COMMAND[4] = 0x00;
+	REG_CARD_COMMAND[5] = 0x00;
+	REG_CARD_COMMAND[6] = 0x00;
+	REG_CARD_COMMAND[7] = 0x00;
+	REG_ROMCTRL = CARD_CR2_SETTINGS;
 
 	while (REG_ROMCTRL & CARD_BUSY) {
-		temp = C_REG_CARD_DATA_RD;
+		volatile auto _ = REG_CARD_DATA_RD;
 	}
-	return temp;
 }
 
-uint16_t init() {
-	productType = ACTION_REPLAY_DS;
-	chipType = TYPE1;
-	openSpi(0);
-	if(auto chip_id = readChipID(); std::find(ards_flash_ids.begin(), ards_flash_ids.end(), chip_id) != ards_flash_ids.end()) {
-		return chip_id;
-	}
-	
-	chipType = TYPE2;
-	if(auto chip_id = readChipID(); std::find(ards_type2_flash_ids.begin(), ards_type2_flash_ids.end(), chip_id) != ards_type2_flash_ids.end()) {
-		return chip_id;
-	}
-	
-	// Also type2
-	productType = GAMES_N_MUSIC;
-	if(auto chip_id = readChipID(); std::find(gnm_flash_ids.begin(), gnm_flash_ids.end(), chip_id) != gnm_flash_ids.end()) {
-		return chip_id;
-	}
-	
-	// Reset to defaults and exit as invalid.
-	productType = ACTION_REPLAY_DS;
-	chipType = TYPE1;
-	return 0xFFFF;
 }
 
-uint16_t checkFlashID() {
-	openSpi(0);
-	return readChipID();
 }
 
+bool init() {
+	protocolMode = PROTOCOL_MODE::AR_DSiME;
+	ARDSiME::setSpiMode();
+	if(auto* flash_chip = get_flash_chip(ARDSiME::readChipID()); flash_chip->id != 0xFFFF) {
+		selected_chip = flash_chip;
+		return true;
+	}
+	if(auto* flash_chip = get_flash_chip(ARDSiME::readChipID_EON_Flash()); flash_chip->id != 0xFFFF) {
+		selected_chip = flash_chip;
+		return true;
+	}
+	protocolMode = PROTOCOL_MODE::GNM;
+	GNM::setSpiMode();
+	if(auto* flash_chip = get_flash_chip(GNM::readChipID(0x5555)); flash_chip->id != 0xFFFF) {
+		selected_chip = flash_chip;
+		return true;
+	}
+	if(auto* flash_chip = get_flash_chip(GNM::readChipID(0x0AAA)); flash_chip->id != 0xFFFF) {
+		selected_chip = flash_chip;
+		return true;
+	}
+
+	selected_chip = &unknown_chip;
+	return false;
+}
+
+void writeSector(uint32_t sectorAddr, uint8_t* sectorBuff) {
+	switch(protocolMode) {
+		case PROTOCOL_MODE::AR_DSiME:
+			return ARDSiME::writeSector(sectorAddr, sectorBuff);
+		case PROTOCOL_MODE::GNM:
+			return GNM::writeSector(sectorAddr, sectorBuff);
+	}
+}
+
+void readSector(uint32_t sectorAddr, uint8_t* outBuff) {
+	switch(protocolMode) {
+		case PROTOCOL_MODE::AR_DSiME:
+			return ARDSiME::readFromFlashAddress(sectorAddr, outBuff, 0x1000);
+		case PROTOCOL_MODE::GNM:
+			return GNM::readFromFlashAddress(sectorAddr, outBuff, 0x1000);
+	}
+}
+
+void eraseChip() {
+	switch(protocolMode) {
+		case PROTOCOL_MODE::AR_DSiME:
+			return ARDSiME::eraseChip();
+		case PROTOCOL_MODE::GNM:
+			return GNM::eraseChip();
+	}
+}
+
+void eraseSector(uint32_t sectorAddr) {
+	switch(protocolMode) {
+		case PROTOCOL_MODE::AR_DSiME:
+			return ARDSiME::eraseSector(sectorAddr);
+		case PROTOCOL_MODE::GNM:
+			return GNM::eraseSector(sectorAddr);
+	}
+}
+
+const char* productName() {
+	if(protocolMode == PROTOCOL_MODE::AR_DSiME) {
+		return "Action Replay DS(i) (Media Edition)";
+	}
+	switch(selected_chip->foundInProducts & ~ACTION_REPLAY_DSiME) {
+		case GAMES_N_MUSIC:
+			return "Games n' Music";
+		case ACTION_REPLAY_DS:
+			return "Action Replay DS";
+		default:
+			return "unknown";
+	}
+}
+
+const char* getFlashChipName() {
+	return selected_chip->name;
+}
+
+uint16_t getFlashChipId() {
+	return selected_chip->id;
+}
+
+uint16_t getFlashSectorsCount() {
+	auto count = selected_chip->sectorCount;
+
+	if(protocolMode == PROTOCOL_MODE::GNM) {
+		return std::min<uint16_t>(256, count);
+	}
+	
+	return count;
+}
+
+PROTOCOL_MODE getProtocolMode() {
+	return protocolMode;
+}
