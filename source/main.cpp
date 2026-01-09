@@ -73,6 +73,8 @@ u16 CardInit() {
 	if (cardEjected)cardEjected = !CardIsPresent();
 	consoleClear();
 	if(!init()) {
+		if (!initialBoot)printf("Unsupported cart!\n\nInsert a different cart...");
+		initialBoot = false;
 		return 0xFFFF;
 	}
 	auto chipID = getFlashChipId();
